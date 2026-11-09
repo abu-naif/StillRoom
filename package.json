@@ -1,0 +1,9 @@
+{
+  "name": "stillroom-pc",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {"build": "node build.mjs"},
+  "dependencies": {"react": "19.2.6", "react-dom": "19.2.6", "lucide-react": "1.31.0"},
+  "devDependencies": {"esbuild": "0.27.0"}
+}
