@@ -1,1 +1,19 @@
 node_modules/
+data/
+__pycache__/
+
+# Local credentials, tools and environment configuration
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+
+# Private databases, backups and exported notes
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+stillroom-notes*.txt
