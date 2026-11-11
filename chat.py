@@ -1,6 +1,7 @@
 """Private friend requests and chat routes; attachments are SQLite BLOBs."""
 import base64
 import binascii
+import math
 import re
 import sqlite3
 import time
@@ -17,7 +18,7 @@ CREATE TABLE IF NOT EXISTS messages (
  id INTEGER PRIMARY KEY, sender_id INTEGER NOT NULL REFERENCES users(id),
  recipient_id INTEGER NOT NULL REFERENCES users(id), text TEXT NOT NULL,
  created REAL NOT NULL, client_id TEXT NOT NULL,
- filename TEXT, mime TEXT, size INTEGER, attachment BLOB,
+ filename TEXT, mime TEXT, size INTEGER, attachment BLOB, duration REAL,
  UNIQUE(sender_id,client_id), CHECK(sender_id<>recipient_id));
 CREATE TABLE IF NOT EXISTS notification_settings (
  user_id INTEGER PRIMARY KEY REFERENCES users(id), enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)));
@@ -30,7 +31,13 @@ CREATE TABLE IF NOT EXISTS request_reads (
 CREATE INDEX IF NOT EXISTS messages_inbox ON messages(recipient_id,sender_id,id);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages(sender_id,recipient_id,id);
 '''
-COLUMNS = 'id,sender_id,recipient_id,text,created,filename,mime,size'
+COLUMNS = 'id,sender_id,recipient_id,text,created,filename,mime,size,duration'
+
+
+def initialize(db):
+    db.executescript(SCHEMA)
+    if 'duration' not in {row['name'] for row in db.execute('PRAGMA table_info(messages)')}:
+        db.execute('ALTER TABLE messages ADD COLUMN duration REAL')
 
 
 def friends(db, uid, peer):
@@ -217,11 +224,14 @@ def post(handler, db, user, data):
             handler.reply(200, dict(existing))
             return True
         name, mime, content = attachment(data.get('attachment'))
+        duration = (data.get('attachment') or {}).get('duration')
+        if duration is not None and (not mime or not mime.startswith('audio/') or isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or not 0 < duration <= 604800):
+            raise ValueError()
         if not text.strip() and content is None:
             handler.reply(400, {'error': 'Write a message or attach a file.'})
             return True
-        mid = db.execute('''INSERT INTO messages(sender_id,recipient_id,text,created,client_id,filename,mime,size,attachment)
-            VALUES(?,?,?,?,?,?,?,?,?)''', (uid, peer, text, time.time(), client_id, name, mime, len(content) if content else None, content)).lastrowid
+        mid = db.execute('''INSERT INTO messages(sender_id,recipient_id,text,created,client_id,filename,mime,size,attachment,duration)
+            VALUES(?,?,?,?,?,?,?,?,?,?)''', (uid, peer, text, time.time(), client_id, name, mime, len(content) if content else None, content, duration)).lastrowid
         db.commit()
         handler.reply(200, dict(db.execute(f'SELECT {COLUMNS} FROM messages WHERE id=?', (mid,)).fetchone()))
     else:

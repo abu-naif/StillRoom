@@ -51,7 +51,7 @@ def initialize():
             PRIMARY KEY(user_id, provider, id));
         CREATE TABLE IF NOT EXISTS login_attempts (client TEXT PRIMARY KEY, count INTEGER NOT NULL, until REAL NOT NULL);
         ''')
-        db.executescript(chat.SCHEMA)
+        chat.initialize(db)
     DATABASE.chmod(0o600)
 
 

@@ -1,6 +1,7 @@
 import base64
 import http.client
 import json
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -108,9 +109,12 @@ class AccountsTest(unittest.TestCase):
         ]
         for index, (name, mime, content) in enumerate(files):
             payload = {'peer': aid, 'text': '', 'client_id': 'attachment-message-'+str(index), 'attachment': {'name': name, 'mime': mime, 'data': base64.b64encode(content).decode()}}
+            if mime.startswith('audio/'):
+                payload['attachment']['duration'] = 3.5
             status, _, item = self.request('/api/messages/send', payload, bob)
             self.assertEqual(status, 200)
             self.assertNotIn('attachment', item)
+            self.assertEqual(item['duration'], 3.5 if mime.startswith('audio/') else None)
             path = '/api/attachments/'+str(item['id'])
             self.assertEqual(self.request(path, cookie=alice)[2], content)
             self.assertEqual(self.request(path, cookie=bob)[2], content)
@@ -118,6 +122,9 @@ class AccountsTest(unittest.TestCase):
             self.assertEqual(self.request(path)[0], 401)
             with start.connect() as db:
                 self.assertEqual(db.execute('SELECT attachment FROM messages WHERE id=?', (item['id'],)).fetchone()[0], content)
+        for index, duration in enumerate([-1, float('nan'), '10', True]):
+            payload = {'peer': aid, 'client_id': 'bad-duration-test-'+str(index), 'attachment': {'name': 'voice.webm', 'mime': 'audio/webm', 'data': base64.b64encode(files[2][2]).decode(), 'duration': duration}}
+            self.assertEqual(self.request('/api/messages/send', payload, bob)[0], 400)
         invalid = {'peer': bid, 'client_id': 'bad-attachment-00001', 'attachment': {'name': 'bad.pdf', 'mime': 'application/pdf', 'data': base64.b64encode(b'<script>bad</script>').decode()}}
         self.assertEqual(self.request('/api/messages/send', invalid, alice)[0], 400)
         invalid['attachment'] = {'name': 'bad.svg', 'mime': 'image/svg+xml', 'data': base64.b64encode(b'<svg/>').decode()}
@@ -215,6 +222,25 @@ class AccountsTest(unittest.TestCase):
         self.request('/api/friends/respond', {'request_id': rid, 'action': 'cancel'}, alice)
         self.request('/api/friends/request', {'username': 'notify-outsider'}, alice)
         self.assertEqual(self.request('/api/notifications', cookie=outsider)[2]['total'], 1)
+
+    def test_existing_chat_database_duration_migration(self):
+        import chat
+        db = sqlite3.connect(':memory:')
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute('CREATE TABLE users(id INTEGER PRIMARY KEY)')
+            db.executescript("""CREATE TABLE messages(
+                id INTEGER PRIMARY KEY, sender_id INTEGER, recipient_id INTEGER, text TEXT,
+                created REAL, client_id TEXT, filename TEXT, mime TEXT, size INTEGER, attachment BLOB);
+                INSERT INTO messages VALUES(1,1,2,'old message',1,'old-client-id','voice.webm','audio/webm',4,X'1a45dfa3');""")
+            chat.initialize(db)
+            chat.initialize(db)
+            row = db.execute('SELECT * FROM messages WHERE id=1').fetchone()
+            self.assertEqual(row['text'], 'old message')
+            self.assertEqual(row['attachment'], b'\x1aE\xdf\xa3')
+            self.assertIsNone(row['duration'])
+        finally:
+            db.close()
 
     def test_install_assets_and_configured_https_origin(self):
         for path in ['/manifest.webmanifest', '/sw.js', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png']:

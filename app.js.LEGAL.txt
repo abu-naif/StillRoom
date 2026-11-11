@@ -84,6 +84,7 @@ lucide-react/dist/esm/icons/minimize-2.mjs:
 lucide-react/dist/esm/icons/moon.mjs:
 lucide-react/dist/esm/icons/notebook-pen.mjs:
 lucide-react/dist/esm/icons/paperclip.mjs:
+lucide-react/dist/esm/icons/pause.mjs:
 lucide-react/dist/esm/icons/play.mjs:
 lucide-react/dist/esm/icons/rotate-ccw-clock.mjs:
 lucide-react/dist/esm/icons/send.mjs:

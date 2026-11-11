@@ -38,11 +38,11 @@ Use **Watch**, **Messages**, and **History** in the header to switch pages. The 
 
 Open **Messages** in the header. Enter an existing account's username to send a friend request. The recipient can accept or decline it; the sender can cancel a pending request. Texting and attachments are available only after acceptance.
 
-Choose a friend to open a conversation. Text supports Unicode emoji, and the smile button opens an emoji picker. New messages appear automatically (about every two seconds while the app is open). Older messages are available with **Load older messages**. Switching conversations or hiding Messages preserves unsent drafts while signed in; signing out or reloading clears drafts.
+Choose a friend to open a conversation. Text supports Unicode emoji. Desktop users have a smile button for the emoji picker; phones and touch devices use their keyboard’s emoji controls instead. New messages appear automatically (about every two seconds while the app is open). Older messages are available with **Load older messages**. Switching conversations or hiding Messages preserves unsent drafts while signed in; signing out or reloading clears drafts.
 
-The paperclip attaches one file per message, up to **10 MB**: PDF, PNG, JPEG, GIF, WebP, or audio (WebM, Ogg, MP4/M4A, WAV, MP3). Review the attachment before pressing **Send**. Pictures display inline, audio has playback controls, and PDFs have a download link. File contents are checked against the selected media type; SVG and HTML are not supported.
+The paperclip sits to the left of the text field; on phones it hides while text is entered and returns when the field is cleared. It attaches one file per message, up to **10 MB**: PDF, PNG, JPEG, GIF, WebP, or audio (WebM, Ogg, MP4/M4A, WAV, MP3). Review the attachment before pressing **Send**. Pictures display inline, audio displays as a voice bubble with play/pause, a seek bar, duration, and 1×/1.5×/2× playback speed instead of a filename, and PDFs have a download link. File contents are checked against the selected media type; SVG and HTML are not supported.
 
-Use the microphone button to record a voice message, then the stop button to preview it before sending. Recordings stop automatically after two minutes; closing Messages stops recording and keeps its preview. Microphone access requires browser permission and a browser that supports recording. You can attach an existing audio file if recording is unavailable.
+The action button shows a microphone when the draft is empty, switches to Send when text or an attachment is present, and shows Stop during recording. Tap the microphone to record, then Stop to preview the voice message and Send to deliver it. New recordings include a saved duration so their timer is available before playback. Existing databases are extended automatically on server restart without replacing chats or files. Recordings stop automatically after two minutes; closing Messages stops recording and keeps its preview. Microphone access requires browser permission and a browser that supports recording. You can attach an existing audio file if recording is unavailable.
 
 Messages and the actual PDF, image, and audio **bytes are stored in SQLite**, not an external file host. Only the sender and recipient can retrieve a message's attachment through the app. Messages are not end-to-end encrypted; someone with filesystem access to the database can read them. Attachments increase database size, so keep backups of the `data` folder.
 
@@ -58,7 +58,7 @@ These are in-app notifications. There is no push service sending alerts while th
 
 ## Mobile and installation
 
-The interface adapts to small screens. On Messages, phones show the friends list first; selecting a friend opens a full-screen conversation and hides the main navigation. Use **Friends** to return to the list and restore navigation. Message bubbles use compact spacing, and the text field starts at one line and grows to a limited height. Send sits beside the text field. The inbox follows the visible viewport when the on-screen keyboard opens or pans the page, keeping Send above the keyboard, with safe-area space for phone notches and home indicators.
+The interface adapts to small screens. On Messages, phones show the friends list first; selecting a friend opens a full-screen conversation with an initials avatar and friend label, and hides the main navigation. Use **Friends** to return to the list and restore navigation. Message bubbles use compact spacing, and the text field starts at one line and grows to a limited height. Send sits beside the text field. The inbox follows the visible viewport when the on-screen keyboard opens or pans the page, keeping Send above the keyboard, with safe-area space for phone notches and home indicators.
 
 Use the **install/download icon** in the header for installation instructions or an **Install app** button when Chrome makes it available:
 
@@ -101,6 +101,7 @@ Back up the `data` folder while the server is stopped to preserve accounts and n
 - `start.py` — local server, accounts, sessions, SQLite API
 - `chat.py` — friend requests, chat permissions, message and attachment API
 - `src/Chat.tsx` — messaging UI, read acknowledgements, file previews, emoji and voice recorder
+- `src/VoiceMessage.tsx` — voice playback, seeking, duration and playback speed
 - `src/Notifications.tsx` — unread counts, notification panel and quiet-mode settings
 - `src/InstallApp.tsx` — install prompt and platform instructions
 - `manifest.webmanifest`, `icons/`, `src/sw.js`, `sw.js` — install assets and public-shell offline support
