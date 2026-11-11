@@ -1,0 +1,2 @@
+# Optional device push delivery; the local app otherwise uses Python's standard library.
+pywebpush==2.5.0

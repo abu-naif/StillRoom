@@ -5,6 +5,7 @@ import math
 import re
 import sqlite3
 import time
+import push_notify
 from urllib.parse import urlsplit, parse_qs, quote
 
 MAX_ATTACHMENT = 10 * 1024 * 1024
@@ -18,8 +19,13 @@ CREATE TABLE IF NOT EXISTS messages (
  id INTEGER PRIMARY KEY, sender_id INTEGER NOT NULL REFERENCES users(id),
  recipient_id INTEGER NOT NULL REFERENCES users(id), text TEXT NOT NULL,
  created REAL NOT NULL, client_id TEXT NOT NULL,
- filename TEXT, mime TEXT, size INTEGER, attachment BLOB, duration REAL,
+ filename TEXT, mime TEXT, size INTEGER, attachment BLOB, duration REAL, edited REAL, deleted INTEGER NOT NULL DEFAULT 0,
  UNIQUE(sender_id,client_id), CHECK(sender_id<>recipient_id));
+CREATE TABLE IF NOT EXISTS message_changes (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER NOT NULL REFERENCES messages(id));
+CREATE TABLE IF NOT EXISTS friend_mutes (
+ user_id INTEGER NOT NULL REFERENCES users(id), peer_id INTEGER NOT NULL REFERENCES users(id),
+ PRIMARY KEY(user_id,peer_id));
 CREATE TABLE IF NOT EXISTS notification_settings (
  user_id INTEGER PRIMARY KEY REFERENCES users(id), enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)));
 CREATE TABLE IF NOT EXISTS message_reads (
@@ -31,13 +37,16 @@ CREATE TABLE IF NOT EXISTS request_reads (
 CREATE INDEX IF NOT EXISTS messages_inbox ON messages(recipient_id,sender_id,id);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages(sender_id,recipient_id,id);
 '''
-COLUMNS = 'id,sender_id,recipient_id,text,created,filename,mime,size,duration'
+COLUMNS = 'id,sender_id,recipient_id,text,created,filename,mime,size,duration,edited,deleted'
 
 
 def initialize(db):
     db.executescript(SCHEMA)
-    if 'duration' not in {row['name'] for row in db.execute('PRAGMA table_info(messages)')}:
-        db.execute('ALTER TABLE messages ADD COLUMN duration REAL')
+    columns = {row['name'] for row in db.execute('PRAGMA table_info(messages)')}
+    for name, spec in [('duration','REAL'), ('edited','REAL'), ('deleted','INTEGER NOT NULL DEFAULT 0')]:
+        if name not in columns:
+            db.execute(f'ALTER TABLE messages ADD COLUMN {name} {spec}')
+    push_notify.initialize(db)
 
 
 def friends(db, uid, peer):
@@ -94,16 +103,16 @@ def get(handler, db, user):
         conversations = db.execute("""SELECT m.sender_id AS peer_id,u.username,COUNT(*) AS unread
             FROM messages m JOIN users u ON u.id=m.sender_id
             LEFT JOIN message_reads r ON r.user_id=m.recipient_id AND r.peer_id=m.sender_id
-            WHERE m.recipient_id=? AND m.id>COALESCE(r.through_id,0)
+            WHERE m.recipient_id=? AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM friend_mutes fm WHERE fm.user_id=m.recipient_id AND fm.peer_id=m.sender_id) AND m.id>COALESCE(r.through_id,0)
             GROUP BY m.sender_id ORDER BY MAX(m.id) DESC""", (uid,)).fetchall()
         handler.reply(200, {'enabled': bool(setting['enabled']) if setting else True,
                             'requests': [dict(row) for row in requests],
                             'conversations': [dict(row) for row in conversations],
                             'total': len(requests)+sum(row['unread'] for row in conversations)})
     elif path.path == '/api/social':
-        rows = db.execute('''SELECT f.id,f.sender_id,f.status,u.id AS peer_id,u.username
+        rows = db.execute('''SELECT f.id,f.sender_id,f.status,u.id AS peer_id,u.username, EXISTS(SELECT 1 FROM friend_mutes fm WHERE fm.user_id=? AND fm.peer_id=u.id) AS muted
             FROM friendships f JOIN users u ON u.id=CASE WHEN f.low_id=? THEN f.high_id ELSE f.low_id END
-            WHERE f.low_id=? OR f.high_id=? ORDER BY u.username''', (uid, uid, uid)).fetchall()
+            WHERE f.low_id=? OR f.high_id=? ORDER BY u.username''', (uid, uid, uid, uid)).fetchall()
         handler.reply(200, [dict(row) for row in rows])
     elif path.path == '/api/messages':
         try:
@@ -114,12 +123,21 @@ def get(handler, db, user):
             if not friends(db, uid, peer):
                 handler.reply(403, {'error': 'Accept a friend request before chatting.'})
             else:
+                snapshot = db.execute('SELECT COALESCE(MAX(id),0) FROM message_changes').fetchone()[0]
                 rows = db.execute(f'''SELECT {COLUMNS} FROM messages WHERE
                     ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))
                     AND id<? AND id>? ORDER BY id {'ASC' if after else 'DESC'} LIMIT 101''', (uid, peer, peer, uid, before, after)).fetchall()
                 more = len(rows) > 100
                 items = rows[:100]
-                handler.reply(200, {'messages': [dict(r) for r in (items if after else reversed(items))], 'more': more})
+                changes = []
+                revision = snapshot
+                if 'changes_after' in args:
+                    since = 0 if args['changes_after'][0]=='0' else positive(args['changes_after'][0])
+                    changed = db.execute(f"SELECT {','.join('m.'+name for name in COLUMNS.split(','))},c.id AS revision FROM message_changes c JOIN messages m ON m.id=c.message_id WHERE c.id>? AND c.id<=? AND ((m.sender_id=? AND m.recipient_id=?) OR (m.sender_id=? AND m.recipient_id=?)) ORDER BY c.id LIMIT 100", (since,snapshot,uid,peer,peer,uid)).fetchall()
+                    changes = [{name: row[name] for name in COLUMNS.split(',')} for row in changed]
+                    if len(changed)==100:
+                        revision = changed[-1]['revision']
+                handler.reply(200, {'messages': [dict(r) for r in (items if after else reversed(items))], 'more': more, 'changes': changes, 'revision': revision})
         except (ValueError, IndexError):
             handler.reply(400, {'error': 'Invalid conversation.'})
     elif path.path.startswith('/api/attachments/'):
@@ -154,6 +172,8 @@ def post(handler, db, user, data):
         if not isinstance(enabled, bool):
             raise ValueError()
         db.execute('INSERT INTO notification_settings(user_id,enabled) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled', (uid, int(enabled)))
+        if not enabled:
+            db.execute('DELETE FROM push_jobs WHERE event_token IN (SELECT token FROM push_events WHERE user_id=?)', (uid,))
         db.commit()
         handler.reply(200, {'enabled': enabled})
     elif handler.path == '/api/notifications/read-requests':
@@ -177,6 +197,42 @@ def post(handler, db, user, data):
                 ON CONFLICT(user_id,peer_id) DO UPDATE SET through_id=MAX(message_reads.through_id,excluded.through_id)""", (uid, peer, through))
             db.commit()
             handler.reply(200, {'ok': True})
+    elif handler.path == '/api/friends/mute':
+        peer, muted = positive(data.get('peer')), data.get('muted')
+        if not isinstance(muted,bool):
+            raise ValueError()
+        if not friends(db,uid,peer):
+            handler.reply(403, {'error':'Only accepted friends can be muted.'})
+        else:
+            if muted:
+                db.execute('INSERT OR IGNORE INTO friend_mutes VALUES(?,?)', (uid,peer))
+                db.execute('DELETE FROM push_jobs WHERE event_token IN (SELECT token FROM push_events WHERE user_id=? AND actor_id=?)', (uid,peer))
+            else:
+                db.execute('DELETE FROM friend_mutes WHERE user_id=? AND peer_id=?', (uid,peer))
+            db.commit()
+            handler.reply(200, {'muted':muted})
+    elif handler.path in ('/api/messages/edit','/api/messages/delete'):
+        mid = positive(data.get('message_id'))
+        row = db.execute(f'SELECT {COLUMNS} FROM messages WHERE id=? AND sender_id=?', (mid,uid)).fetchone()
+        if not row:
+            handler.reply(404, {'error':'Your message was not found.'})
+        elif row['deleted']:
+            if handler.path.endswith('/delete'):
+                handler.reply(200,dict(row))
+            else:
+                handler.reply(409,{'error':'This message has been deleted.'})
+        else:
+            if handler.path.endswith('/edit'):
+                text = data.get('text')
+                if not isinstance(text,str) or not text.strip() or len(text)>10000 or not row['text']:
+                    handler.reply(400,{'error':'Enter message text between 1 and 10,000 characters.'})
+                    return True
+                db.execute('UPDATE messages SET text=?,edited=? WHERE id=?', (text,time.time(),mid))
+            else:
+                db.execute("UPDATE messages SET text='',deleted=1,filename=NULL,mime=NULL,size=NULL,attachment=NULL,duration=NULL WHERE id=?", (mid,))
+            db.execute('INSERT INTO message_changes(message_id) VALUES(?)', (mid,))
+            db.commit()
+            handler.reply(200,dict(db.execute(f'SELECT {COLUMNS} FROM messages WHERE id=?',(mid,)).fetchone()))
     elif handler.path == '/api/friends/request':
         name = data.get('username')
         if not isinstance(name, str):
@@ -190,6 +246,7 @@ def post(handler, db, user, data):
             low, high = sorted((uid, peer['id']))
             try:
                 db.execute("INSERT INTO friendships(low_id,high_id,sender_id,status,created) VALUES(?,?,?,'pending',?)", (low, high, uid, time.time()))
+                push_notify.enqueue(db, peer['id'], uid, 'request', db.execute('SELECT id FROM friendships WHERE low_id=? AND high_id=?',(low,high)).fetchone()[0])
                 db.commit()
                 handler.reply(200, {'ok': True})
             except sqlite3.IntegrityError:
@@ -232,6 +289,7 @@ def post(handler, db, user, data):
             return True
         mid = db.execute('''INSERT INTO messages(sender_id,recipient_id,text,created,client_id,filename,mime,size,attachment,duration)
             VALUES(?,?,?,?,?,?,?,?,?,?)''', (uid, peer, text, time.time(), client_id, name, mime, len(content) if content else None, content, duration)).lastrowid
+        push_notify.enqueue(db,peer,uid,'message',mid)
         db.commit()
         handler.reply(200, dict(db.execute(f'SELECT {COLUMNS} FROM messages WHERE id=?', (mid,)).fetchone()))
     else:

@@ -1,5 +1,5 @@
 // Only the public app shell is cached. Accounts, messages and attachments are network-only.
-const CACHE = 'stillroom-shell-2ca01d96fdc6d46d';
+const CACHE = 'stillroom-shell-89b58aad4c375da1';
 const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -17,4 +17,32 @@ self.addEventListener('fetch', event => {
     }
     return response;
   }).catch(() => caches.match(url.pathname).then(cached => cached || new Response('Stillroom is offline. Start your server and reconnect.', {status: 503, headers: {'Content-Type': 'text/plain'}}))));
+});
+
+self.addEventListener('push', event => {
+  event.waitUntil((async () => {
+    try {
+      const payload = event.data?.json();
+      if (!payload || typeof payload.event !== 'string' || payload.event.length > 100) return;
+      // Recheck permission on the server at display time: queued notifications cannot bypass quiet mode, mutes or logout.
+      const response = await fetch('/api/push/check?token=' + encodeURIComponent(payload.event), {credentials: 'include', cache: 'no-store'});
+      if (!response.ok) return;
+      const notification = await response.json();
+      if (!notification.allowed) return;
+      await self.registration.showNotification(notification.title, {body: notification.body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: notification.tag, data: {peer: notification.peer}, renotify: true});
+    } catch (_) { /* Fail closed when current account preferences cannot be checked. */ }
+  })());
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const peer = event.notification.data?.peer;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      existing.postMessage({type: 'open-chat', peer});
+      return existing.focus();
+    }
+    return self.clients.openWindow('/' + (Number.isSafeInteger(peer) && peer > 0 ? '?chat=' + peer : '') + '#messages');
+  })());
 });

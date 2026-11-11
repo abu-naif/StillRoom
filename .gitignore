@@ -24,3 +24,4 @@ stillroom-notes*.txt
 *.p12
 *.pfx
 certs/
+.venv/

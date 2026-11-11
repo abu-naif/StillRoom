@@ -1,6 +1,6 @@
 # Stillroom — PC edition
 
-A quiet YouTube and Google Drive video viewer with local accounts, private notes per video, viewing history, friend requests, private chats, cinema mode, and light/dark themes. Python 3 runs the server and SQLite database; no API keys or cloud hosting are required.
+A quiet YouTube and Google Drive video viewer with local accounts, private notes per video, viewing history, friend requests, private chats, cinema mode, and light/dark themes. Python 3 runs the server and SQLite database; local use needs no paid API keys or cloud hosting. Optional device notifications use the Web Push setup below.
 
 ## Run
 
@@ -44,9 +44,15 @@ The paperclip sits to the left of the text field; on phones it hides while text 
 
 The action button shows a microphone when the draft is empty, switches to Send when text or an attachment is present, and shows Stop during recording. Tap the microphone to record, then Stop to preview the voice message and Send to deliver it. New recordings include a saved duration so their timer is available before playback. Existing databases are extended automatically on server restart without replacing chats or files. Recordings stop automatically after two minutes; closing Messages stops recording and keeps its preview. Microphone access requires browser permission and a browser that supports recording. You can attach an existing audio file if recording is unavailable.
 
-Messages and the actual PDF, image, and audio **bytes are stored in SQLite**, not an external file host. Only the sender and recipient can retrieve a message's attachment through the app. Messages are not end-to-end encrypted; someone with filesystem access to the database can read them. Attachments increase database size, so keep backups of the `data` folder.
+Messages and the actual PDF, image, and audio **bytes are stored in SQLite**, not an external file host. Only the sender and recipient can retrieve a message's attachment through the app. Chat messages are not end-to-end encrypted; someone with filesystem access to the database can read them. Attachments increase database size, so keep backups of the `data` folder.
 
 This remains a **local PC app**. Both accounts must exist on the same Stillroom server. To try two accounts at once, use a regular browser window and a private window (or separate browser profiles). Separate PCs running their own copies do not share accounts or messages. Publishing the repository to GitHub does not create a shared messaging server.
+
+## Edit and delete messages
+
+Press and hold one of your own messages on a phone, or right-click it on PC, to open its menu. Keyboard users can focus an outgoing bubble and press Shift+F10. Choose **Edit text**, save the replacement, or choose **Delete message** and confirm. You can edit only your own nonempty text; only the sender can delete a message. A deleted message becomes a placeholder for both participants and its current text/attachment bytes are cleared from the message row. Backups may retain earlier content.
+
+Edits show an “edited” label and sync to the other inbox through normal polling. Existing drafts are preserved while editing. Sending keeps the composer editable and preserves a new draft typed while a request is pending.
 
 ## Notifications and quiet mode
 
@@ -54,11 +60,54 @@ The bell and Messages tab show a red count for new incoming friend requests and 
 
 Open the **bell → Notifications** switch to turn notifications on or off. Turning them off enables **Quiet mode**: no red dots, counts, sounds, device pop-ups, or notification items. You can still open chats and respond whenever you want. This preference is stored per account in SQLite and applies across browsers connected to that same server. Unread state is retained while muted, so unread items can appear again if notifications are reenabled.
 
-These are in-app notifications. There is no push service sending alerts while the app is closed.
+### Device notifications (Android, iPhone and desktop)
+
+After the server setup below, open the bell panel and choose **Allow on this device**. Browser permission is requested only when you tap that button. The main Notifications switch must be on. You can turn off a single device with **Turn off on this device** without changing your account-wide setting.
+
+- **Android:** use an up-to-date browser with notifications allowed for the site. An installed Home Screen app is also supported.
+- **iPhone/iPad:** iOS/iPadOS 16.4 or later is required. Add Stillroom to the Home Screen, open it from that icon, then tap Allow on this device. See [Apple/WebKit's Web Push requirements](https://webkit.org/blog/13878/).
+- Serve the app over **HTTPS**. The server must stay online and be reachable by the phone. With private Tailscale hosting, the phone must remain connected to the Tailscale network so the background app can verify current notification preferences.
+- Browser permissions, OS notification settings, Focus/Do Not Disturb, battery policies and network availability can delay or suppress delivery. This is Web Push, not a native WhatsApp/Messenger integration.
+
+Notifications contain a sender name and a generic message/request alert; message contents and attachments are not included in the push payload. The server checks quiet mode and per-friend mute before enqueueing and delivery. The service worker checks them again before displaying an alert, and fails closed if it cannot verify the current account/settings. Read or deleted messages are not notified. Logging out disconnects subscriptions associated with that sign-in session. There is a maximum of 10 notification devices per account.
+
+### One-time Ubuntu server setup for Web Push
+
+Run in the deployed project directory:
+
+```sh
+sudo apt install python3-venv
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python push_setup.py --contact https://YOUR-STILLROOM-HTTPS-ADDRESS
+```
+
+Replace the contact with your real HTTPS address, or use `mailto:you@example.com`. This creates persistent VAPID signing keys in the ignored `data` folder; it never overwrites existing keys. Keep these keys private and back them up with the database. They must remain the same across deployments for existing device subscriptions to work.
+
+If using the systemd service from the hosting guide, change its `ExecStart` to the virtual environment's Python, keeping your actual username and origin:
+
+```ini
+ExecStart=/home/YOUR_USER/stillroom-pc/.venv/bin/python -u /home/YOUR_USER/stillroom-pc/start.py --origin https://YOUR-STILLROOM-HTTPS-ADDRESS --no-browser
+```
+
+Then apply the service change:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl restart stillroom
+```
+
+For a manual launch, use `.venv/bin/python start.py --origin https://YOUR-STILLROOM-HTTPS-ADDRESS --no-browser`.
+
+The server starts a background worker automatically when the dependency and keys are available. Pending jobs are stored in SQLite and retried on temporary provider failures; expired subscriptions are removed. No paid notification service is needed. Tests validate encryption/signing and mock-provider delivery; actual phone delivery must be checked after deployment and device permission.
+
+### Mute an individual friend
+
+Press and hold a friend's row in the Messages friends list, or right-click it on PC. Choose **Mute notifications** or **Unmute notifications**. Muting is private to your account and suppresses that friend's message badges and device alerts; their messages still arrive in the inbox. Other friends remain unaffected.
 
 ## Mobile and installation
 
-The interface adapts to small screens. On Messages, phones show the friends list first; selecting a friend opens a full-screen conversation with an initials avatar and friend label, and hides the main navigation. Use **Friends** to return to the list and restore navigation. Message bubbles use compact spacing, and the text field starts at one line and grows to a limited height. Send sits beside the text field. The inbox follows the visible viewport when the on-screen keyboard opens or pans the page, keeping Send above the keyboard, with safe-area space for phone notches and home indicators.
+The interface adapts to small screens. On Messages, phones show the friends list first; selecting a friend opens a full-screen conversation with an initials avatar and username, and hides the main navigation. Use the **back arrow** to return to the list and restore navigation. Message bubbles use compact spacing, and the text field starts at one line and grows to a limited height. Send sits beside the text field. The inbox follows the visible viewport when the on-screen keyboard opens or pans the page, keeping Send above the keyboard, with safe-area space for phone notches and home indicators.
 
 Use the **install/download icon** in the header for installation instructions or an **Install app** button when Chrome makes it available:
 
@@ -98,7 +147,8 @@ Back up the `data` folder while the server is stopped to preserve accounts and n
 
 ## Development
 
-- `start.py` — local server, accounts, sessions, SQLite API
+- `start.py` — local server, accounts, sessions, SQLite API and optional push worker
+- `push_notify.py`, `push_setup.py`, `requirements.txt` — opt-in encrypted Web Push delivery and private signing-key setup
 - `chat.py` — friend requests, chat permissions, message and attachment API
 - `src/Chat.tsx` — messaging UI, read acknowledgements, file previews, emoji and voice recorder
 - `src/VoiceMessage.tsx` — voice playback, seeking, duration and playback speed

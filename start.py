@@ -1,4 +1,4 @@
-"""Stillroom local accounts and SQLite API. Python 3 standard library only."""
+"""Stillroom accounts and SQLite API, with optional Web Push delivery."""
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie
 from contextlib import contextmanager
@@ -16,6 +16,7 @@ import sqlite3
 import time
 import webbrowser
 import chat
+import push_notify
 
 ROOT = Path(__file__).resolve().parent
 DATABASE = ROOT / 'data' / 'stillroom.sqlite3'
@@ -94,6 +95,8 @@ class Handler(SimpleHTTPRequestHandler):
                 user = self.user(db)
                 if not user:
                     return self.reply(401, {'error': 'Please sign in.'})
+                if push_notify.routes(self,db,user,database=DATABASE):
+                    return
                 if chat.get(self, db, user):
                     return
                 if self.path == '/api/me':
@@ -157,6 +160,8 @@ class Handler(SimpleHTTPRequestHandler):
                 user = self.user(db)
                 if not user:
                     return self.reply(401, {'error': 'Please sign in.'})
+                if push_notify.routes(self,db,user,data,database=DATABASE):
+                    return
                 if chat.post(self, db, user, data):
                     return
                 if self.path == '/api/logout':
@@ -230,6 +235,7 @@ def main():
     except (OSError, ssl.SSLError) as error:
         raise SystemExit(f'Could not start Stillroom: {error}\nClose any previous Stillroom server using Ctrl+C, then try again.')
     url += '/'
+    push_stop=push_notify.start_worker(connect,DATABASE)
     print(f'Stillroom is ready: {url}\nKeep this terminal open. Press Ctrl+C to stop.')
     if not args.no_browser:
         webbrowser.open(url)
@@ -238,6 +244,7 @@ def main():
     except KeyboardInterrupt:
         print('\nStillroom stopped.')
     finally:
+        push_stop.set()
         server.server_close()
 
 

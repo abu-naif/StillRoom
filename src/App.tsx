@@ -37,7 +37,7 @@ export default function Home(){
  const [conversationOpen,setConversationOpen]=useState(false);
  const [online,setOnline]=useState(()=>typeof navigator==='undefined'||navigator.onLine);
  const [page,setPage]=useState<'watch'|'messages'|'history'>(()=>typeof window!=='undefined'&&location.hash==='#messages'?'messages':typeof window!=='undefined'&&location.hash==='#history'?'history':'watch');const chatOpen=page==='messages';const historyOpen=page==='history';
- const [notificationsOpen,setNotificationsOpen]=useState(false);const [requestedPeer,setRequestedPeer]=useState<{id:number;nonce:number}|null>(null);const notifications=useNotifications(user?.username);
+ const [notificationsOpen,setNotificationsOpen]=useState(false);const [requestedPeer,setRequestedPeer]=useState<{id:number;nonce:number}|null>(()=>{const id=Number(new URLSearchParams(location.search).get('chat'));return Number.isSafeInteger(id)&&id>0?{id,nonce:Date.now()}:null});const notifications=useNotifications(user?.username);
  const playback=useRef<number|null>(null),navigating=useRef(false),routeChange=useRef<(page:'watch'|'messages'|'history')=>void>(()=>{});
  const [history,setHistory]=useState<HistoryVideo[]>([]);const [bookmark,setBookmark]=useState('');
  const accountEpoch=useRef(0);const unsaved=useRef<{video:Video;notes:string}|null>(null);const pending=useRef(Promise.resolve());const active=useRef<Video|null>(null);const revision=useRef(0);const loading=useRef(false);
@@ -72,7 +72,9 @@ export default function Home(){
  }
  routeChange.current=next=>{navigate(next,true)};
  useEffect(()=>{const changed=()=>routeChange.current(location.hash==='#messages'?'messages':location.hash==='#history'?'history':'watch');window.addEventListener('hashchange',changed);window.addEventListener('popstate',changed);return()=>{window.removeEventListener('hashchange',changed);window.removeEventListener('popstate',changed)}},[]);
- function openMessages(peer?:number){if(peer)setRequestedPeer({id:peer,nonce:Date.now()});else setRequestedPeer(null);setNotificationsOpen(false);navigate('messages')}
+ function openMessages(peer?:number){if(peer)setRequestedPeer({id:peer,nonce:Date.now()});else setRequestedPeer({id:0,nonce:Date.now()});setNotificationsOpen(false);navigate('messages')}
+ const pushNavigation=useRef(openMessages);pushNavigation.current=openMessages;
+ useEffect(()=>{const clicked=(event:MessageEvent)=>{if(event.data?.type==='open-chat')pushNavigation.current(Number.isSafeInteger(event.data.peer)?event.data.peer:undefined)};navigator.serviceWorker?.addEventListener('message',clicked);return()=>navigator.serviceWorker?.removeEventListener('message',clicked)},[]);
  function load(e:React.FormEvent){e.preventDefault();const v=parseVideo(url);if(!v){setError('Paste a valid YouTube or Google Drive video link to get started.');return;}openVideo(v)}
  function changeNotes(value:string){setNotes(value);if(video){unsaved.current={video,notes:value};persist(video,{notes:value}).catch(()=>{})}}
  function progress(position:number,title?:string){if(!video||active.current!==video)return;playback.current=position;persist(video,{position,...(title?{title}:{})}).then(()=>setHistory(rows=>rows.map(row=>row.id===video.id&&row.provider===video.provider?{...row,position,title:title||row.title}:row))).catch(()=>{})}

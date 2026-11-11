@@ -162,6 +162,43 @@ class AccountsTest(unittest.TestCase):
         self.assertEqual(self.request('/api/friends/respond', {'request_id': request_id, 'action': 'cancel'}, alice)[0], 200)
         self.assertEqual(self.request('/api/social', cookie=outsider)[2], [])
 
+    def test_message_actions_and_friend_mutes(self):
+        users=[]
+        for name in ['action-alice','action-bob','action-outsider']:
+            _,cookie,_=self.request('/api/register',{'username':name,'password':'message action password'})
+            cookie=cookie.split(';')[0]
+            users.append((cookie,self.request('/api/me',cookie=cookie)[2]['id']))
+        (alice,aid),(bob,bid),(other,oid)=users
+        self.request('/api/friends/request',{'username':'action-bob'},alice)
+        rid=self.request('/api/social',cookie=bob)[2][0]['id']
+        self.request('/api/friends/respond',{'request_id':rid,'action':'accept'},bob)
+        _,_,sent=self.request('/api/messages/send',{'peer':bid,'text':'Original text','client_id':'action-message-0001'},alice)
+        original=self.request('/api/messages?peer='+str(aid),cookie=bob)[2]
+        self.assertEqual(self.request('/api/messages/edit',{'message_id':sent['id'],'text':'not yours'},bob)[0],404)
+        self.assertEqual(self.request('/api/messages/delete',{'message_id':sent['id']},other)[0],404)
+        status,_,edited=self.request('/api/messages/edit',{'message_id':sent['id'],'text':'Edited text'},alice)
+        self.assertEqual(status,200)
+        self.assertIsNotNone(edited['edited'])
+        updates=self.request('/api/messages?peer='+str(aid)+'&after='+str(sent['id'])+'&changes_after='+str(original['revision']),cookie=bob)[2]
+        self.assertEqual(updates['changes'][0]['text'],'Edited text')
+        self.assertEqual(self.request('/api/messages/edit',{'message_id':sent['id'],'text':' '},alice)[0],400)
+        self.assertEqual(self.request('/api/friends/mute',{'peer':oid,'muted':True},bob)[0],403)
+        self.assertEqual(self.request('/api/friends/mute',{'peer':aid,'muted':True},bob)[0],200)
+        self.assertTrue(self.request('/api/social',cookie=bob)[2][0]['muted'])
+        self.assertFalse(self.request('/api/social',cookie=alice)[2][0]['muted'])
+        self.assertEqual(self.request('/api/notifications',cookie=bob)[2]['total'],0)
+        self.request('/api/friends/mute',{'peer':aid,'muted':False},bob)
+        self.assertEqual(self.request('/api/notifications',cookie=bob)[2]['total'],1)
+        status,_,deleted=self.request('/api/messages/delete',{'message_id':sent['id']},alice)
+        self.assertEqual(status,200)
+        self.assertTrue(deleted['deleted'])
+        self.assertEqual(deleted['text'],'')
+        self.assertEqual(self.request('/api/messages/edit',{'message_id':sent['id'],'text':'revive'},alice)[0],409)
+        self.assertEqual(self.request('/api/messages/delete',{'message_id':sent['id']},alice)[0],200)
+        self.assertEqual(self.request('/api/notifications',cookie=bob)[2]['total'],0)
+        updates=self.request('/api/messages?peer='+str(aid)+'&after='+str(sent['id'])+'&changes_after='+str(updates['revision']),cookie=bob)[2]
+        self.assertTrue(updates['changes'][0]['deleted'])
+
     def test_notification_preferences_and_read_state(self):
         def account(name):
             status, cookie, _ = self.request('/api/register', {'username': name, 'password': 'notification test password'})
