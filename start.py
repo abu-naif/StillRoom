@@ -3,6 +3,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie
 from contextlib import contextmanager
 from pathlib import Path
+import argparse
+import ssl
+from urllib.parse import urlsplit
 import hashlib
 import hmac
 import json
@@ -12,9 +15,12 @@ import secrets
 import sqlite3
 import time
 import webbrowser
+import chat
 
 ROOT = Path(__file__).resolve().parent
 DATABASE = ROOT / 'data' / 'stillroom.sqlite3'
+PUBLIC_FILES = {'/', '/index.html', '/app.js', '/app.js.LEGAL.txt', '/styles.css', '/favicon.svg',
+                '/manifest.webmanifest', '/sw.js', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'}
 
 
 @contextmanager
@@ -45,6 +51,7 @@ def initialize():
             PRIMARY KEY(user_id, provider, id));
         CREATE TABLE IF NOT EXISTS login_attempts (client TEXT PRIMARY KEY, count INTEGER NOT NULL, until REAL NOT NULL);
         ''')
+        db.executescript(chat.SCHEMA)
     DATABASE.chmod(0o600)
 
 
@@ -63,6 +70,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         if cookie:
+            if getattr(self.server, 'public_origin', '').startswith('https://'):
+                cookie += '; Secure'
             self.send_header('Set-Cookie', cookie)
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -85,6 +94,8 @@ class Handler(SimpleHTTPRequestHandler):
                 user = self.user(db)
                 if not user:
                     return self.reply(401, {'error': 'Please sign in.'})
+                if chat.get(self, db, user):
+                    return
                 if self.path == '/api/me':
                     return self.reply(200, dict(user))
                 if self.path == '/api/history':
@@ -92,22 +103,23 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.reply(200, [dict(row) for row in rows])
             return self.reply(404, {'error': 'Not found.'})
         # Never expose the database, source, dotfiles, or directory listings.
-        if self.path.split('?')[0] not in ('/', '/index.html', '/app.js', '/app.js.LEGAL.txt', '/styles.css', '/favicon.svg'):
+        if self.path.split('?')[0] not in PUBLIC_FILES:
             return self.reply(404, {'error': 'Not found.'})
         return super().do_GET()
 
     def do_HEAD(self):
-        if self.path.split('?')[0] not in ('/', '/index.html', '/app.js', '/app.js.LEGAL.txt', '/styles.css', '/favicon.svg'):
+        if self.path.split('?')[0] not in PUBLIC_FILES:
             return self.reply(404, {'error': 'Not found.'})
         return super().do_HEAD()
 
     def do_POST(self):
-        expected = f'http://127.0.0.1:{self.server.server_port}'
+        expected = getattr(self.server, 'public_origin', f'http://127.0.0.1:{self.server.server_port}')
         if self.headers.get('X-Stillroom') != '1' or self.headers.get('Origin', expected) != expected:
-            return self.reply(403, {'error': 'Use the Stillroom page on 127.0.0.1.'})
+            return self.reply(403, {'error': 'Use the Stillroom page at its configured address.'})
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            if not 0 < length <= 120000:
+            limit = 14 * 1024 * 1024 if self.path == '/api/messages/send' else 120000
+            if not 0 < length <= limit:
                 return self.reply(400, {'error': 'Request is too large or empty.'})
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
@@ -145,6 +157,8 @@ class Handler(SimpleHTTPRequestHandler):
                 user = self.user(db)
                 if not user:
                     return self.reply(401, {'error': 'Please sign in.'})
+                if chat.post(self, db, user, data):
+                    return
                 if self.path == '/api/logout':
                     db.execute('DELETE FROM sessions WHERE token=?', (hashlib.sha256(self.token().encode()).hexdigest(),))
                     db.commit()
@@ -184,14 +198,41 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Run Stillroom locally, or at an explicitly configured HTTPS address.')
+    parser.add_argument('--host', default='127.0.0.1', help='Bind address (default: this PC only)')
+    parser.add_argument('--port', default=8765, type=int)
+    parser.add_argument('--origin', help='Canonical HTTPS origin for phone access or a reverse proxy')
+    parser.add_argument('--cert', help='TLS certificate PEM file trusted by client devices')
+    parser.add_argument('--key', help='TLS private key PEM file')
+    parser.add_argument('--no-browser', action='store_true')
+    args = parser.parse_args()
+    if bool(args.cert) != bool(args.key):
+        parser.error('Supply both --cert and --key.')
+    if args.host not in ('127.0.0.1', 'localhost') and not (args.cert and args.origin):
+        parser.error('Phone/network access requires --cert, --key and an explicit HTTPS --origin.')
+    url = (args.origin or f"{'https' if args.cert else 'http'}://127.0.0.1:{args.port}").rstrip('/')
+    origin = urlsplit(url)
+    if not origin.hostname or origin.username or origin.password or origin.path or origin.query or origin.fragment or origin.scheme not in ('http','https'):
+        parser.error('--origin must be an origin such as https://stillroom.example.com, without a path.')
+    if (args.origin or args.cert) and origin.scheme != 'https':
+        parser.error('Configured network origins must use HTTPS.')
+    if not 1 <= args.port <= 65535:
+        parser.error('Port must be between 1 and 65535.')
     initialize()
     try:
-        server = ThreadingHTTPServer(('127.0.0.1', 8765), Handler)
-    except OSError as error:
+        server = ThreadingHTTPServer((args.host, args.port), Handler)
+        server.public_origin = url
+        if args.cert:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(args.cert, args.key)
+            server.socket = context.wrap_socket(server.socket, server_side=True)
+    except (OSError, ssl.SSLError) as error:
         raise SystemExit(f'Could not start Stillroom: {error}\nClose any previous Stillroom server using Ctrl+C, then try again.')
-    url = 'http://127.0.0.1:8765/'
+    url += '/'
     print(f'Stillroom is ready: {url}\nKeep this terminal open. Press Ctrl+C to stop.')
-    webbrowser.open(url)
+    if not args.no_browser:
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,0 +1,25 @@
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {Bell,BellOff,X,MessageCircle,UserPlus} from 'lucide-react';
+export type NotificationState={enabled:boolean;total:number;requests:{id:number;username:string}[];conversations:{peer_id:number;username:string;unread:number}[]};
+export const NO_NOTIFICATIONS:NotificationState={enabled:false,total:0,requests:[],conversations:[]};
+async function request(path:string,data?:object){
+ const response=await fetch('/api/'+path,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-Stillroom':'1'}:{},body:data?JSON.stringify(data):undefined});
+ const result=await response.json();if(!response.ok){if(response.status===401)window.dispatchEvent(new Event('session-expired'));throw new Error(result.error||'Could not load notifications.')}return result;
+}
+export function useNotifications(username?:string){
+ const [state,setState]=useState<NotificationState>(NO_NOTIFICATIONS),[error,setError]=useState(''),[saving,setSaving]=useState(false),[ready,setReady]=useState(false);
+ const epoch=useRef(0),quietOverride=useRef<boolean|null>(null),inFlight=useRef(false),refreshAgain=useRef(false);
+ const refresh=useCallback(async()=>{
+  if(!username)return;if(inFlight.current){refreshAgain.current=true;return}inFlight.current=true;const token=epoch.current;
+  try{const result=await request('notifications');if(token===epoch.current){setState({...result,enabled:quietOverride.current??result.enabled});setReady(true);setError(previous=>previous.startsWith('Setting was not saved.')?previous:'')}}catch(e){if(token===epoch.current)setError((e as Error).message)}finally{inFlight.current=false;if(refreshAgain.current){refreshAgain.current=false;window.dispatchEvent(new Event('notifications-changed'))}}
+ },[username]);
+ useEffect(()=>{epoch.current++;quietOverride.current=null;setState(NO_NOTIFICATIONS);setReady(false);setError('');setSaving(false);if(!username)return;refresh();const interval=setInterval(refresh,3000);const changed=()=>refresh();const focus=()=>{if(!document.hidden)refresh()};window.addEventListener('notifications-changed',changed);window.addEventListener('focus',changed);document.addEventListener('visibilitychange',focus);return()=>{epoch.current++;clearInterval(interval);window.removeEventListener('notifications-changed',changed);window.removeEventListener('focus',changed);document.removeEventListener('visibilitychange',focus)}},[username,refresh]);
+ async function toggle(){if(saving||!ready)return;const enabled=!state.enabled;quietOverride.current=enabled;setState(previous=>({...previous,enabled}));setSaving(true);setError('');const token=epoch.current;
+  try{await request('notifications/settings',{enabled});if(token===epoch.current){quietOverride.current=null;await refresh()}}catch(e){if(token===epoch.current)setError('Setting was not saved. '+(e as Error).message)}finally{if(token===epoch.current)setSaving(false)}
+ }
+ return {state,error,saving,ready,toggle};
+}
+export function Badge({count}:{count:number}){return count>0?<span className="notification-badge" aria-hidden="true">{count>99?'99+':count}</span>:null}
+export default function Notifications({state,error,saving,ready,onToggle,onClose,onOpenMessages}:{state:NotificationState;error:string;saving:boolean;ready:boolean;onToggle:()=>void;onClose:()=>void;onOpenMessages:(peer?:number)=>void}){
+ return <section className="notification-panel" aria-label="Notifications"><div className="notification-heading"><h2>{state.enabled?<Bell size={20}/>:<BellOff size={20}/>} Notifications</h2><button className="iconbutton" onClick={onClose} aria-label="Close notifications"><X size={18}/></button></div><div className="quiet-setting"><div><strong>{state.enabled?'Notifications on':'Quiet mode'}</strong><p>{state.enabled?'Red badges show new requests and unread messages.':'No badges, alerts or interruptions. Your conversations are still here.'}</p></div><button className="notification-switch" role="switch" aria-label="Notifications" aria-checked={state.enabled} disabled={saving||!ready} onClick={onToggle}><span/></button></div>{error&&<p className="error" role="alert">{error}</p>}{!ready?<p className="chat-muted">Loading notification settings…</p>:state.enabled?<div className="notification-items">{!state.total&&<p className="chat-muted">All caught up. A little room to breathe.</p>}{state.requests.map(item=><button key={'request-'+item.id} onClick={()=>onOpenMessages()}><UserPlus size={18}/><span><strong>{item.username}</strong> sent you a friend request.</span></button>)}{state.conversations.map(item=><button key={'peer-'+item.peer_id} onClick={()=>onOpenMessages(item.peer_id)}><MessageCircle size={18}/><span><strong>{item.username}</strong><small>{item.unread} unread {item.unread===1?'message':'messages'}</small></span><Badge count={item.unread}/></button>)}</div>:<button className="text-button quiet-open" onClick={()=>onOpenMessages()}>Open messages when you’re ready</button>}<p className="notification-footnote">Updates appear while Stillroom is open. No sounds or device pop-ups.</p></section>;
+}
