@@ -1,6 +1,6 @@
 # Stillroom — PC edition
 
-A quiet YouTube viewer with cinema mode, light/dark themes, and notes saved per video on this browser and device. No ChatGPT account, login, API key, or hosting is needed.
+A quiet YouTube and Google Drive video viewer with cinema mode, light/dark themes, and notes saved per video on this browser and device. No ChatGPT account, login, API key, or hosting is needed.
 
 ## Run it (Linux or macOS)
 
@@ -22,9 +22,11 @@ Python 3 is required. If `py` isn't available but Python is installed, try `pyth
 
 ## Use
 
-Paste a regular YouTube URL, youtu.be link, Shorts link, live video link, or video ID. Click Watch video. Timestamp links are supported. Cinema mode hides the surrounding workspace; Escape leaves cinema mode.
+Paste a regular YouTube URL, youtu.be link, Shorts link, live video link, or video ID. Google Drive video file links (`drive.google.com/file/d/…/view`, preview links, and `drive.google.com/open?id=…` links) are also supported, including links with resource keys. Folder links are not supported. Click Watch video. Timestamp links are supported. Cinema mode hides the surrounding workspace; Escape leaves cinema mode.
 
 Notes save automatically for each video in this browser's local storage. Load the same video to retrieve them. Use the download icon to export notes as text. Clearing browser data removes saved notes. Private browsing may discard them. Always use the same localhost address and port to access the same stored notes.
+
+For Drive videos, you must have permission to view the file. Sharing as “Anyone with the link” allows viewing without signing in; restricted files may need sign-in through the “open in Google Drive” link below the player. Drive processing, browser cookie settings, and owner restrictions can affect embedded playback.
 
 An internet connection is needed to play videos. The interface and all its fonts and icons are bundled locally. YouTube's embedded player may show ads, branding, and related videos, and some videos disallow embedding. This does not bypass YouTube restrictions.
 
@@ -49,4 +51,4 @@ To rebuild after changing React source, install Node.js/npm, then run in this fo
 
 Then refresh your local page. These commands are unnecessary for normal use. The provided app.js is already built.
 
-The local server listens only on 127.0.0.1. The app has no analytics or backend database. Loading a video connects your browser to YouTube.
+The local server listens only on 127.0.0.1. The app has no analytics or backend database. Loading a video connects your browser to the selected provider (YouTube or Google Drive).
