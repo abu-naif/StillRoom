@@ -58,7 +58,7 @@ These are in-app notifications. There is no push service sending alerts while th
 
 ## Mobile and installation
 
-The interface adapts to small screens. On Messages, phones show the friends list first; select a friend to open the conversation, then use **Friends** to return. The composer adjusts to the on-screen keyboard, with safe-area space for phone notches and home indicators.
+The interface adapts to small screens. On Messages, phones show the friends list first; selecting a friend opens a full-screen conversation and hides the main navigation. Use **Friends** to return to the list and restore navigation. Message bubbles use compact spacing, and the text field starts at one line and grows to a limited height. Send sits beside the text field. The inbox follows the visible viewport when the on-screen keyboard opens or pans the page, keeping Send above the keyboard, with safe-area space for phone notches and home indicators.
 
 Use the **install/download icon** in the header for installation instructions or an **Install app** button when Chrome makes it available:
 
