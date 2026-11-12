@@ -1,6 +1,6 @@
 // Only the public app shell is cached. Accounts, messages and attachments are network-only.
-const CACHE = 'stillroom-shell-5723b149abf1b6a7';
-const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
+const CACHE = 'stillroom-shell-50afadd35a3c9b7c';
+const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/notification-badge.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
@@ -29,7 +29,7 @@ self.addEventListener('push', event => {
       if (!response.ok) return;
       const notification = await response.json();
       if (!notification.allowed) return;
-      await self.registration.showNotification(notification.title, {body: notification.body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: notification.tag, data: {peer: notification.peer}, renotify: true});
+      await self.registration.showNotification(notification.title, {body: notification.body, icon: '/icons/icon-512.png', badge: '/icons/notification-badge.png', tag: notification.tag, data: {peer: notification.peer}, renotify: true});
     } catch (_) { /* Fail closed when current account preferences cannot be checked. */ }
   })());
 });

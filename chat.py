@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS request_reads (
 CREATE INDEX IF NOT EXISTS messages_inbox ON messages(recipient_id,sender_id,id);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages(sender_id,recipient_id,id);
 '''
-COLUMNS = 'id,sender_id,recipient_id,text,created,filename,mime,size,duration,edited,deleted'
+COLUMNS = 'id,client_id,sender_id,recipient_id,text,created,filename,mime,size,duration,edited,deleted'
 
 
 def initialize(db):

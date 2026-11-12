@@ -1,3 +1,4 @@
+import {api as api,CONNECTION_ERROR} from './api';
 "use client";
 import Player from './Player';
 import Chat from './Chat';
@@ -23,13 +24,7 @@ export function videoUrl(video:Video, embed=false){
 // Preserve existing YouTube note keys while keeping Drive notes separate.
 export function noteKey(video:Video){return 'stillroom-note-'+(video.provider==='drive'?'drive-':'')+video.id}
 type HistoryVideo = Video & {notes:string;position:number;title:string;lastViewed:number};
-async function api(path:string,data?:object){
- const body=data?JSON.stringify(data):undefined;
- const response=await fetch('/api/'+path,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-Stillroom':'1'}:{},body,keepalive:!!body&&new Blob([body]).size<60000});
- const result=await response.json();
- if(!response.ok){if(response.status===401&&!['login','register','me'].includes(path))window.dispatchEvent(new Event('session-expired'));throw new Error(result.error||'Request failed.');}
- return result;
-}
+
 function clock(seconds:number){return `${Math.floor(seconds/3600)?Math.floor(seconds/3600)+':':''}${Math.floor(seconds/60)%60}`.replace(/:(\d)$/,':0$1')+':'+String(Math.floor(seconds)%60).padStart(2,'0')}
 export default function Home(){
  const [url,setUrl]=useState('');const [video,setVideo]=useState<Video|null>(null);const [error,setError]=useState('');const [cinema,setCinema]=useState(false);const [dark,setDark]=useState(false);const [notes,setNotes]=useState('');const [saved,setSaved]=useState(false);const [help,setHelp]=useState(false);const input=useRef<HTMLInputElement>(null);

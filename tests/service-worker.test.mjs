@@ -33,6 +33,8 @@ test('push checks current permission before showing a device notification',async
  handlers.push(event);await work;
  assert.equal(shown.length,1);
  assert.equal(shown[0].data.peer,7);
+ assert.equal(shown[0].icon,'/icons/icon-512.png');
+ assert.equal(shown[0].badge,'/icons/notification-badge.png');
  pushResponse={allowed:false};
  handlers.push(event);await work;
  assert.equal(shown.length,1);

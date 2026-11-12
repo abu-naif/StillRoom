@@ -41,7 +41,7 @@ class AccountsTest(unittest.TestCase):
         return status, session, json.loads(body) if "application/json" in content_type else body
 
     def test_public_assets_revalidate_on_mobile_refresh(self):
-        for path in ('/', '/app.js', '/styles.css', '/sw.js'):
+        for path in ('/', '/app.js', '/styles.css', '/sw.js', '/icons/notification-badge.png'):
             conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port)
             conn.request('HEAD', path)
             response = conn.getresponse()

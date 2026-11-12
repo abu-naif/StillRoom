@@ -21,7 +21,7 @@ import push_notify
 ROOT = Path(__file__).resolve().parent
 DATABASE = ROOT / 'data' / 'stillroom.sqlite3'
 PUBLIC_FILES = {'/', '/index.html', '/app.js', '/app.js.LEGAL.txt', '/styles.css', '/favicon.svg',
-                '/manifest.webmanifest', '/sw.js', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'}
+                '/manifest.webmanifest', '/sw.js', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/notification-badge.png'}
 
 
 @contextmanager

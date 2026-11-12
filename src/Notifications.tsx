@@ -1,20 +1,18 @@
+import {api as request,CONNECTION_ERROR} from './api';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import DeviceNotifications from './DeviceNotifications';
 import {Bell,BellOff,X,MessageCircle,UserPlus} from 'lucide-react';
 export type NotificationState={enabled:boolean;total:number;requests:{id:number;username:string}[];conversations:{peer_id:number;username:string;unread:number}[]};
 export const NO_NOTIFICATIONS:NotificationState={enabled:false,total:0,requests:[],conversations:[]};
-async function request(path:string,data?:object){
- const response=await fetch('/api/'+path,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-Stillroom':'1'}:{},body:data?JSON.stringify(data):undefined});
- const result=await response.json();if(!response.ok){if(response.status===401)window.dispatchEvent(new Event('session-expired'));throw new Error(result.error||'Could not load notifications.')}return result;
-}
+
 export function useNotifications(username?:string){
  const [state,setState]=useState<NotificationState>(NO_NOTIFICATIONS),[error,setError]=useState(''),[saving,setSaving]=useState(false),[ready,setReady]=useState(false);
  const epoch=useRef(0),quietOverride=useRef<boolean|null>(null),inFlight=useRef(false),refreshAgain=useRef(false);
  const refresh=useCallback(async()=>{
-  if(!username)return;if(inFlight.current){refreshAgain.current=true;return}inFlight.current=true;const token=epoch.current;
+  if(!username||document.hidden||!navigator.onLine)return;if(inFlight.current){refreshAgain.current=true;return}inFlight.current=true;const token=epoch.current;
   try{const result=await request('notifications');if(token===epoch.current){setState({...result,enabled:quietOverride.current??result.enabled});setReady(true);setError(previous=>previous.startsWith('Setting was not saved.')?previous:'')}}catch(e){if(token===epoch.current)setError((e as Error).message)}finally{inFlight.current=false;if(refreshAgain.current){refreshAgain.current=false;window.dispatchEvent(new Event('notifications-changed'))}}
  },[username]);
- useEffect(()=>{epoch.current++;quietOverride.current=null;setState(NO_NOTIFICATIONS);setReady(false);setError('');setSaving(false);if(!username)return;refresh();const interval=setInterval(refresh,3000);const changed=()=>refresh();const focus=()=>{if(!document.hidden)refresh()};window.addEventListener('notifications-changed',changed);window.addEventListener('focus',changed);document.addEventListener('visibilitychange',focus);return()=>{epoch.current++;clearInterval(interval);window.removeEventListener('notifications-changed',changed);window.removeEventListener('focus',changed);document.removeEventListener('visibilitychange',focus)}},[username,refresh]);
+ useEffect(()=>{epoch.current++;quietOverride.current=null;setState(NO_NOTIFICATIONS);setReady(false);setError('');setSaving(false);if(!username)return;refresh();const interval=setInterval(refresh,3000);const changed=()=>refresh();const focus=()=>{if(!document.hidden)refresh()};window.addEventListener('notifications-changed',changed);window.addEventListener('focus',changed);window.addEventListener('online',changed);document.addEventListener('visibilitychange',focus);return()=>{epoch.current++;clearInterval(interval);window.removeEventListener('notifications-changed',changed);window.removeEventListener('focus',changed);window.removeEventListener('online',changed);document.removeEventListener('visibilitychange',focus)}},[username,refresh]);
  async function toggle(){if(saving||!ready)return;const enabled=!state.enabled;quietOverride.current=enabled;setState(previous=>({...previous,enabled}));setSaving(true);setError('');const token=epoch.current;
   try{await request('notifications/settings',{enabled});if(!enabled&&'serviceWorker' in navigator){const registration=await navigator.serviceWorker.getRegistration();(await registration?.getNotifications())?.forEach(item=>item.close());(navigator as any).clearAppBadge?.()}
 if(token===epoch.current){quietOverride.current=null;await refresh()}}catch(e){if(token===epoch.current)setError('Setting was not saved. '+(e as Error).message)}finally{if(token===epoch.current)setSaving(false)}
