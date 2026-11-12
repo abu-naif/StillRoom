@@ -5,12 +5,13 @@ import {test} from 'node:test';
 const handlers={};
 const removed=[],shown=[],opened=[];
 let pushResponse={allowed:true,title:'Stillroom',body:'A new message',peer:7,tag:'stillroom-message-7'},offline=false;
+let shellCacheMode;
 vm.runInNewContext(readFileSync(new URL('../sw.js',import.meta.url),'utf8'),{
  self:{registration:{showNotification:async(title,options)=>{shown.push({title,...options})}},location:{origin:'https://stillroom.test'},clients:{claim:()=>Promise.resolve(),matchAll:async()=>[],openWindow:async url=>{opened.push(url)}},skipWaiting:()=>Promise.resolve(),addEventListener:(name,handler)=>{handlers[name]=handler}},
  URL,Response,
 
  caches:{keys:async()=>['stillroom-shell-old','another-app-cache'],delete:async name=>{removed.push(name)},open:async()=>({addAll:async()=>{},put:async()=>{}}),match:async()=>undefined},
- fetch:async path=>{if(offline)throw new Error('offline');return String(path).startsWith('/api/push/check')?new Response(JSON.stringify(pushResponse),{headers:{'Content-Type':'application/json'}}):new Response('app shell')}
+ fetch:async (path,options)=>{if(!String(path).startsWith('/api/'))shellCacheMode=options?.cache;if(offline)throw new Error('offline');return String(path).startsWith('/api/push/check')?new Response(JSON.stringify(pushResponse),{headers:{'Content-Type':'application/json'}}):new Response('app shell')}
 });
 test('account APIs, chat attachments, and external content never enter offline caching',()=>{
  for(const url of ['/api/me','/api/history','/api/notifications','/api/messages?peer=1','/api/attachments/123','https://www.youtube.com/embed/test']){
@@ -20,6 +21,7 @@ test('account APIs, chat attachments, and external content never enter offline c
 test('public app shell is available through the service worker',async()=>{
  let result;handlers.fetch({request:{url:'https://stillroom.test/index.html',method:'GET'},respondWith:promise=>{result=promise},waitUntil:()=>{}});
  assert.equal(await (await result).text(),'app shell');
+ assert.equal(shellCacheMode,'no-cache');
 });
 test('updates only remove Stillroom app shell caches',async()=>{
  let work;handlers.activate({waitUntil:promise=>{work=promise}});await work;assert.deepEqual(removed,['stillroom-shell-old']);

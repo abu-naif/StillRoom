@@ -40,6 +40,16 @@ class AccountsTest(unittest.TestCase):
         conn.close()
         return status, session, json.loads(body) if "application/json" in content_type else body
 
+    def test_public_assets_revalidate_on_mobile_refresh(self):
+        for path in ('/', '/app.js', '/styles.css', '/sw.js'):
+            conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port)
+            conn.request('HEAD', path)
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.getheader('Cache-Control'), 'no-cache, must-revalidate')
+            response.read()
+            conn.close()
+
     def test_account_isolation_persistence_and_sessions(self):
         self.assertEqual(self.request('/api/history')[0], 401)
         user = {'username': 'alice', 'password': 'correct horse battery'}

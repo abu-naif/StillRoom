@@ -61,6 +61,11 @@ def password_hash(password, salt):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        if self.path.split('?')[0] in PUBLIC_FILES:
+            self.send_header('Cache-Control', 'no-cache, must-revalidate')
+        super().end_headers()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 

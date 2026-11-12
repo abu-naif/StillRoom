@@ -1,5 +1,5 @@
 // Only the public app shell is cached. Accounts, messages and attachments are network-only.
-const CACHE = 'stillroom-shell-300535602ae1b1fc';
+const CACHE = 'stillroom-shell-5c74359aafb8945a';
 const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -10,7 +10,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !ASSETS.includes(url.pathname)) return;
-  event.respondWith(fetch(event.request).then(response => {
+  event.respondWith(fetch(event.request, {cache: 'no-cache'}).then(response => {
     if (response.ok) {
       const copy = response.clone();
       event.waitUntil(caches.open(CACHE).then(cache => cache.put(url.pathname, copy)));
