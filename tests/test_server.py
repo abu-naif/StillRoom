@@ -40,6 +40,30 @@ class AccountsTest(unittest.TestCase):
         conn.close()
         return status, session, json.loads(body) if "application/json" in content_type else body
 
+    def test_username_suggestions_and_clear_conversation(self):
+        def account(name):
+            status, cookie, _ = self.request('/api/register', {'username':name,'password':'long enough password'})
+            self.assertEqual(status,200)
+            cookie=cookie.split(';')[0]
+            return cookie,self.request('/api/me',cookie=cookie)[2]['id']
+        alice,aid=account('suggest-alice')
+        bob,bid=account('suggest-bob')
+        self.assertEqual(self.request('/api/users/search?q=suggest-b',cookie=alice)[2],[{'id':bid,'username':'suggest-bob'}])
+        self.assertEqual(self.request('/api/users/search?q=suggest-alice',cookie=alice)[2],[])
+        self.assertEqual(self.request('/api/users/search?q=%25',cookie=alice)[2],[])
+        self.request('/api/friends/request',{'username':'suggest-bob'},alice)
+        rid=self.request('/api/social',cookie=bob)[2][0]['id']
+        self.request('/api/friends/respond',{'request_id':rid,'action':'accept'},bob)
+        for n in range(105):
+            self.assertEqual(self.request('/api/messages/send',{'peer':bid,'text':str(n),'client_id':f'suggest-message-{n:04}'},alice)[0],200)
+        self.assertEqual(len(self.request(f'/api/messages?peer={bid}',cookie=alice)[2]['messages']),100)
+        self.assertEqual(self.request('/api/messages/clear',{'peer':bid},alice)[0],200)
+        self.assertEqual(self.request(f'/api/messages?peer={bid}',cookie=alice)[2]['messages'],[])
+        self.assertEqual(len(self.request(f'/api/messages?peer={aid}',cookie=bob)[2]['messages']),100)
+        self.assertIsNone(self.request('/api/social',cookie=alice)[2][0]['last_message'])
+        self.request('/api/messages/send',{'peer':aid,'text':'new message','client_id':'suggest-new-message'},bob)
+        self.assertEqual(self.request(f'/api/messages?peer={bid}',cookie=alice)[2]['messages'][0]['text'],'new message')
+
     def test_public_assets_revalidate_on_mobile_refresh(self):
         for path in ('/', '/app.js', '/styles.css', '/sw.js', '/icons/notification-badge.png'):
             conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port)

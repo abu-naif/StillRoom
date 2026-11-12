@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS messages (
  UNIQUE(sender_id,client_id), CHECK(sender_id<>recipient_id));
 CREATE TABLE IF NOT EXISTS message_changes (
  id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER NOT NULL REFERENCES messages(id));
+CREATE TABLE IF NOT EXISTS conversation_clears (
+ user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, through_id INTEGER NOT NULL,
+ PRIMARY KEY(user_id,peer_id));
 CREATE TABLE IF NOT EXISTS friend_mutes (
  user_id INTEGER NOT NULL REFERENCES users(id), peer_id INTEGER NOT NULL REFERENCES users(id),
  PRIMARY KEY(user_id,peer_id));
@@ -97,7 +100,11 @@ def attachment(data):
 def get(handler, db, user):
     path = urlsplit(handler.path)
     uid = user['id']
-    if path.path == '/api/notifications':
+    if path.path == '/api/users/search':
+        query = parse_qs(path.query).get('q', [''])[0].strip().lower()
+        rows = db.execute("SELECT id,username FROM users WHERE id<>? AND substr(username,1,?)=? ORDER BY username LIMIT 10", (uid,len(query),query)).fetchall() if query and len(query)<=40 else []
+        handler.reply(200, [dict(row) for row in rows])
+    elif path.path == '/api/notifications':
         setting = db.execute('SELECT enabled FROM notification_settings WHERE user_id=?', (uid,)).fetchone()
         requests = db.execute("""SELECT f.id,u.username FROM friendships f JOIN users u ON u.id=f.sender_id
             LEFT JOIN request_reads r ON r.request_id=f.id AND r.user_id=?
@@ -106,7 +113,7 @@ def get(handler, db, user):
         conversations = db.execute("""SELECT m.sender_id AS peer_id,u.username,COUNT(*) AS unread
             FROM messages m JOIN users u ON u.id=m.sender_id
             LEFT JOIN message_reads r ON r.user_id=m.recipient_id AND r.peer_id=m.sender_id
-            WHERE m.recipient_id=? AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM friend_mutes fm WHERE fm.user_id=m.recipient_id AND fm.peer_id=m.sender_id) AND m.id>COALESCE(r.through_id,0)
+            WHERE m.recipient_id=? AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM friend_mutes fm WHERE fm.user_id=m.recipient_id AND fm.peer_id=m.sender_id) AND m.id>COALESCE(r.through_id,0) AND m.id>COALESCE((SELECT through_id FROM conversation_clears WHERE user_id=m.recipient_id AND peer_id=m.sender_id),0)
             GROUP BY m.sender_id ORDER BY MAX(m.id) DESC""", (uid,)).fetchall()
         handler.reply(200, {'enabled': bool(setting['enabled']) if setting else True,
                             'requests': [dict(row) for row in requests],
@@ -121,7 +128,8 @@ def get(handler, db, user):
             item = dict(row)
             peer = row['peer_id']
             read = db.execute('SELECT through_id FROM message_reads WHERE user_id=? AND peer_id=?', (peer, uid)).fetchone()
-            latest = db.execute('SELECT id,sender_id,text,deleted FROM messages WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?) ORDER BY id DESC LIMIT 1', (uid,peer,peer,uid)).fetchone()
+            cutoff = db.execute('SELECT through_id FROM conversation_clears WHERE user_id=? AND peer_id=?',(uid,peer)).fetchone()
+            latest = db.execute('SELECT id,sender_id,text,deleted FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?)) AND id>? ORDER BY id DESC LIMIT 1', (uid,peer,peer,uid,cutoff['through_id'] if cutoff else 0)).fetchone()
             item['read_through'] = read['through_id'] if read else 0
             item['last_message'] = dict(latest) if latest else None
             item['typing'] = bool(db.execute('SELECT 1 FROM chat_typing WHERE user_id=? AND peer_id=? AND expires>?', (peer,uid,time.time())).fetchone())
@@ -136,10 +144,12 @@ def get(handler, db, user):
             if not friends(db, uid, peer):
                 handler.reply(403, {'error': 'Accept a friend request before chatting.'})
             else:
+                clear = db.execute('SELECT through_id FROM conversation_clears WHERE user_id=? AND peer_id=?',(uid,peer)).fetchone()
+                after = max(after,clear['through_id'] if clear else 0)
                 snapshot = db.execute('SELECT COALESCE(MAX(id),0) FROM message_changes').fetchone()[0]
                 rows = db.execute(f'''SELECT {COLUMNS} FROM messages WHERE
                     ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))
-                    AND id<? AND id>? ORDER BY id {'ASC' if after else 'DESC'} LIMIT 101''', (uid, peer, peer, uid, before, after)).fetchall()
+                    AND id<? AND id>? ORDER BY id {'ASC' if 'after' in args else 'DESC'} LIMIT 101''', (uid, peer, peer, uid, before, after)).fetchall()
                 more = len(rows) > 100
                 items = rows[:100]
                 changes = []
@@ -150,7 +160,7 @@ def get(handler, db, user):
                     changes = [{name: row[name] for name in COLUMNS.split(',')} for row in changed]
                     if len(changed)==100:
                         revision = changed[-1]['revision']
-                handler.reply(200, {'messages': [dict(r) for r in (items if after else reversed(items))], 'more': more, 'changes': changes, 'revision': revision, 'read_through': (lambda row: row['through_id'] if row else 0)(db.execute('SELECT through_id FROM message_reads WHERE user_id=? AND peer_id=?', (peer,uid)).fetchone())})
+                handler.reply(200, {'messages': [dict(r) for r in (items if 'after' in args else reversed(items))], 'more': more, 'cleared_through': clear['through_id'] if clear else 0, 'changes': changes, 'revision': revision, 'read_through': (lambda row: row['through_id'] if row else 0)(db.execute('SELECT through_id FROM message_reads WHERE user_id=? AND peer_id=?', (peer,uid)).fetchone())})
         except (ValueError, IndexError):
             handler.reply(400, {'error': 'Invalid conversation.'})
     elif path.path.startswith('/api/attachments/'):
@@ -180,7 +190,17 @@ def get(handler, db, user):
 
 def post(handler, db, user, data):
     uid = user['id']
-    if handler.path == '/api/messages/typing':
+    if handler.path == '/api/messages/clear':
+        peer = positive(data.get('peer'))
+        if not friends(db,uid,peer):
+            handler.reply(403, {'error':'Conversation not available.'})
+        else:
+            through = db.execute('SELECT COALESCE(MAX(id),0) FROM messages WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?)',(uid,peer,peer,uid)).fetchone()[0]
+            db.execute('INSERT INTO conversation_clears VALUES(?,?,?) ON CONFLICT(user_id,peer_id) DO UPDATE SET through_id=MAX(through_id,excluded.through_id)',(uid,peer,through))
+            db.execute('INSERT INTO message_reads VALUES(?,?,?) ON CONFLICT(user_id,peer_id) DO UPDATE SET through_id=MAX(through_id,excluded.through_id)',(uid,peer,through))
+            db.commit()
+            handler.reply(200, {'ok':True})
+    elif handler.path == '/api/messages/typing':
         peer = positive(data.get('peer'))
         typing = data.get('typing')
         if not isinstance(typing, bool):

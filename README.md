@@ -28,7 +28,9 @@ Paste a YouTube URL, youtu.be link, Shorts/live link, video ID, or Google Drive 
 
 YouTube progress saves about every five seconds, on player state changes, and when leaving the page. Reopening a video resumes near the saved point; completed videos start again from the beginning. An abrupt browser shutdown or failed connection can lose the last few seconds. Timestamp links set the initial starting point when no saved progress exists.
 
-**Google Drive's embedded preview does not expose a supported playback tracking/seeking API to this app.** Automatic resume is therefore available for YouTube only. For Drive, use **Remember timestamp → Save bookmark**. History retains that timestamp; seek to it manually in the Drive player after reopening.
+Drive tries direct playback, automatically saving progress about every five seconds, on pause, and when leaving. Returning offers **Continue from where I left** or **Start from beginning**. Files that block direct playback fall back to Drive preview, which does not expose playback time or seeking to the app. For those files, use **Remember timestamp → Save bookmark** and seek manually.
+
+Username entry suggests up to ten matching accounts on this server. On PC, the conversation header has a three-dot menu for mute and **Delete conversation**; touch users can hold a friend in the sidebar. Deleting a conversation clears its existing history from your account only, after confirmation. Your friend keeps their copy, and future messages still appear.
 
 Drive files require viewing permission. Restricted files may need sign-in through **open in Google Drive**. Processing, cookie settings, or owner restrictions can affect embedded playback. YouTube may show ads, branding, and related videos, and owners can disable embedding. Internet access is required for either provider.
 
