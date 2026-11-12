@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS notification_settings (
 CREATE TABLE IF NOT EXISTS message_reads (
  user_id INTEGER NOT NULL REFERENCES users(id), peer_id INTEGER NOT NULL REFERENCES users(id),
  through_id INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id,peer_id));
+CREATE TABLE IF NOT EXISTS chat_typing (
+ user_id INTEGER NOT NULL REFERENCES users(id), peer_id INTEGER NOT NULL REFERENCES users(id),
+ expires REAL NOT NULL, PRIMARY KEY(user_id,peer_id));
 CREATE TABLE IF NOT EXISTS request_reads (
  user_id INTEGER NOT NULL REFERENCES users(id), request_id INTEGER NOT NULL REFERENCES friendships(id) ON DELETE CASCADE,
  PRIMARY KEY(user_id,request_id));
@@ -113,7 +116,17 @@ def get(handler, db, user):
         rows = db.execute('''SELECT f.id,f.sender_id,f.status,u.id AS peer_id,u.username, EXISTS(SELECT 1 FROM friend_mutes fm WHERE fm.user_id=? AND fm.peer_id=u.id) AS muted
             FROM friendships f JOIN users u ON u.id=CASE WHEN f.low_id=? THEN f.high_id ELSE f.low_id END
             WHERE f.low_id=? OR f.high_id=? ORDER BY u.username''', (uid, uid, uid, uid)).fetchall()
-        handler.reply(200, [dict(row) for row in rows])
+        items = []
+        for row in rows:
+            item = dict(row)
+            peer = row['peer_id']
+            read = db.execute('SELECT through_id FROM message_reads WHERE user_id=? AND peer_id=?', (peer, uid)).fetchone()
+            latest = db.execute('SELECT id,sender_id,text,deleted FROM messages WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?) ORDER BY id DESC LIMIT 1', (uid,peer,peer,uid)).fetchone()
+            item['read_through'] = read['through_id'] if read else 0
+            item['last_message'] = dict(latest) if latest else None
+            item['typing'] = bool(db.execute('SELECT 1 FROM chat_typing WHERE user_id=? AND peer_id=? AND expires>?', (peer,uid,time.time())).fetchone())
+            items.append(item)
+        handler.reply(200, items)
     elif path.path == '/api/messages':
         try:
             args = parse_qs(path.query)
@@ -137,7 +150,7 @@ def get(handler, db, user):
                     changes = [{name: row[name] for name in COLUMNS.split(',')} for row in changed]
                     if len(changed)==100:
                         revision = changed[-1]['revision']
-                handler.reply(200, {'messages': [dict(r) for r in (items if after else reversed(items))], 'more': more, 'changes': changes, 'revision': revision})
+                handler.reply(200, {'messages': [dict(r) for r in (items if after else reversed(items))], 'more': more, 'changes': changes, 'revision': revision, 'read_through': (lambda row: row['through_id'] if row else 0)(db.execute('SELECT through_id FROM message_reads WHERE user_id=? AND peer_id=?', (peer,uid)).fetchone())})
         except (ValueError, IndexError):
             handler.reply(400, {'error': 'Invalid conversation.'})
     elif path.path.startswith('/api/attachments/'):
@@ -167,7 +180,19 @@ def get(handler, db, user):
 
 def post(handler, db, user, data):
     uid = user['id']
-    if handler.path == '/api/notifications/settings':
+    if handler.path == '/api/messages/typing':
+        peer = positive(data.get('peer'))
+        typing = data.get('typing')
+        if not isinstance(typing, bool):
+            raise ValueError()
+        if not friends(db,uid,peer):
+            handler.reply(403, {'error':'Conversation not available.'})
+        else:
+            db.execute('DELETE FROM chat_typing WHERE expires<?', (time.time(),))
+            db.execute('INSERT INTO chat_typing VALUES(?,?,?) ON CONFLICT(user_id,peer_id) DO UPDATE SET expires=excluded.expires', (uid,peer,time.time()+6 if typing else 0))
+            db.commit()
+            handler.reply(200, {'ok':True})
+    elif handler.path == '/api/notifications/settings':
         enabled = data.get('enabled')
         if not isinstance(enabled, bool):
             raise ValueError()

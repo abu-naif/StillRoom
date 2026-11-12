@@ -72,8 +72,10 @@ lucide-react/dist/esm/icons/bell.mjs:
 lucide-react/dist/esm/icons/check.mjs:
 lucide-react/dist/esm/icons/circle-question-mark.mjs:
 lucide-react/dist/esm/icons/download.mjs:
+lucide-react/dist/esm/icons/ellipsis-vertical.mjs:
 lucide-react/dist/esm/icons/face-slightly-smiling.mjs:
 lucide-react/dist/esm/icons/file-text.mjs:
+lucide-react/dist/esm/icons/info.mjs:
 lucide-react/dist/esm/icons/leaf.mjs:
 lucide-react/dist/esm/icons/link-2.mjs:
 lucide-react/dist/esm/icons/log-out.mjs:
