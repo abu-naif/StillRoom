@@ -1,5 +1,5 @@
 // Only the public app shell is cached. Accounts, messages and attachments are network-only.
-const CACHE = 'stillroom-shell-5c74359aafb8945a';
+const CACHE = 'stillroom-shell-5723b149abf1b6a7';
 const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));

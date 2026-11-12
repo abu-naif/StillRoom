@@ -240,6 +240,14 @@ def main():
     except (OSError, ssl.SSLError) as error:
         raise SystemExit(f'Could not start Stillroom: {error}\nClose any previous Stillroom server using Ctrl+C, then try again.')
     url += '/'
+    if origin.scheme == 'https' and not (DATABASE.parent/'webpush.json').exists() and not (DATABASE.parent/'vapid-private.pem').exists():
+        try:
+            import pywebpush  # Check delivery support before creating persistent signing keys.
+            from push_setup import setup
+            setup(DATABASE.parent, url.rstrip('/'))
+            print('Web Push signing keys created privately. Allow notifications on each device.')
+        except (ImportError, OSError, ValueError):
+            print('Web Push setup could not complete. See the server setup instructions in README.md.')
     push_stop=push_notify.start_worker(connect,DATABASE)
     print(f'Stillroom is ready: {url}\nKeep this terminal open. Press Ctrl+C to stop.')
     if not args.no_browser:

@@ -82,7 +82,7 @@ python3 -m venv .venv
 .venv/bin/python push_setup.py --contact https://YOUR-STILLROOM-HTTPS-ADDRESS
 ```
 
-Replace the contact with your real HTTPS address, or use `mailto:you@example.com`. This creates persistent VAPID signing keys in the ignored `data` folder; it never overwrites existing keys. Keep these keys private and back them up with the database. They must remain the same across deployments for existing device subscriptions to work.
+Replace the contact with your real HTTPS address, or use `mailto:you@example.com`. This creates persistent VAPID signing keys in the ignored `data` folder; it never overwrites existing keys. Alternatively, after installing dependencies, starting `.venv/bin/python start.py --origin https://YOUR-STILLROOM-HTTPS-ADDRESS --no-browser` creates missing keys automatically using that HTTPS origin as the contact. Existing or incomplete key files are never replaced automatically. Keep these keys private and back them up with the database. They must remain the same across deployments for existing device subscriptions to work.
 
 If using the systemd service from the hosting guide, change its `ExecStart` to the virtual environment's Python, keeping your actual username and origin:
 
@@ -99,7 +99,7 @@ sudo systemctl restart stillroom
 
 For a manual launch, use `.venv/bin/python start.py --origin https://YOUR-STILLROOM-HTTPS-ADDRESS --no-browser`.
 
-The server starts a background worker automatically when the dependency and keys are available. Pending jobs are stored in SQLite and retried on temporary provider failures; expired subscriptions are removed. No paid notification service is needed. Tests validate encryption/signing and mock-provider delivery; actual phone delivery must be checked after deployment and device permission.
+The server starts a background worker automatically when the dependency and keys are available. Start it with the virtual environment's Python; installing dependencies there does not add them to the system Python. Message pushes use high urgency and a one-hour lifetime so the provider can attempt prompt delivery to idle devices and retain alerts through brief disconnections. Pending jobs are stored in SQLite and retried on temporary provider failures; expired subscriptions are removed. No paid notification service is needed. Tests validate encryption/signing and mock-provider delivery; actual phone delivery must be checked after deployment and device permission.
 
 ### Mute an individual friend
 

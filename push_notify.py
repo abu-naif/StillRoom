@@ -153,7 +153,7 @@ def deliver_batch(connect,config,send=None):
         session=NoRedirectSession()
         def send(subscription,payload):
             return webpush(subscription_info=subscription,data=json.dumps(payload),vapid_private_key=config['private_key'],
-                           vapid_claims={'sub':config['contact']},ttl=300,timeout=10,requests_session=session)
+                           vapid_claims={'sub':config['contact']},headers={'Urgency':'high'},ttl=3600,timeout=10,requests_session=session)
     else:
         session=None
     try:

@@ -168,6 +168,8 @@ class PushTests(unittest.TestCase):
         self.assertEqual(len(captured),1)
         self.assertFalse(captured[0][1]['allow_redirects'])
         self.assertIn('authorization',{key.lower() for key in captured[0][1]['headers']})
+        self.assertEqual(captured[0][1]['headers']['Urgency'], 'high')
+        self.assertEqual(str(captured[0][1]['headers']['ttl']), '3600')
         self.assertNotIn(b'hello',captured[0][1]['data'])
         self.assertEqual(self.jobs(),0)
 
