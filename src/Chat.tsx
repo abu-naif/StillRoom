@@ -23,13 +23,13 @@ function Preview({file,duration,active}:{file:File;duration?:number;active:boole
 }
 export default function Chat({username,onClose,visible,notifications,requestedPeer,onConversationChange}:{onConversationChange:(active:boolean)=>void;username:string;onClose:()=>void;visible:boolean;notifications:NotificationState;requestedPeer:{id:number;nonce:number}|null}){
  const [suggestions,setSuggestions]=useState<{id:number;username:string}[]>([]),[searchError,setSearchError]=useState('');
- useEffect(()=>{let cancelled=false;setSuggestions([]);setSearchError('');if(!target.trim())return;const timer=setTimeout(()=>{request('users/search?q='+encodeURIComponent(target.trim())).then(rows=>{if(!cancelled)setSuggestions(rows)}).catch(e=>{if(!cancelled)setSearchError(e.message)})},250);return()=>{cancelled=true;clearTimeout(timer)}},[target]);
  const [pending,setPending]=useState<Pending[]>([]);const sendingNow=useRef(false);const activePeer=useRef<number|undefined>(undefined);
  const [readThroughPeer,setReadThroughPeer]=useState(0),[info,setInfo]=useState<Message|null>(null);
  const [showConversation,setShowConversation]=useState(false);
  const [phoneComposer,setPhoneComposer]=useState(()=>matchMedia('(max-width:760px), (hover:none) and (pointer:coarse)').matches);
  useEffect(()=>{const query=matchMedia('(max-width:760px), (hover:none) and (pointer:coarse)');const update=()=>{setPhoneComposer(query.matches);setEmoji(false)};query.addEventListener('change',update);return()=>query.removeEventListener('change',update)},[]);
  const [friends,setFriends]=useState<Friend[]>([]),[peer,setPeer]=useState<Friend|null>(null),[target,setTarget]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ useEffect(()=>{let cancelled=false;setSuggestions([]);setSearchError('');if(!target.trim())return;const timer=setTimeout(()=>{request('users/search?q='+encodeURIComponent(target.trim())).then(rows=>{if(!cancelled)setSuggestions(rows)}).catch(e=>{if(!cancelled)setSearchError(e.message)})},250);return()=>{cancelled=true;clearTimeout(timer)}},[target]);
  const [messages,setMessages]=useState<Message[]>([]),[more,setMore]=useState(false),[loading,setLoading]=useState(false),[sending,setSending]=useState(false),[working,setWorking]=useState(false),[emoji,setEmoji]=useState(false);
  const [drafts,setDrafts]=useState<Record<number,Draft>>({}),[recording,setRecording]=useState(false),[recordSeconds,setRecordSeconds]=useState(0),[starting,setStarting]=useState(false);
  const [context,setContext]=useState<{kind:'message'|'friend';id:number;x:number;y:number;confirm?:boolean}|null>(null),[editing,setEditing]=useState<{id:number;text:string}|null>(null),[actionBusy,setActionBusy]=useState(false),[actionError,setActionError]=useState('');
