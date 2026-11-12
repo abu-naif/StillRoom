@@ -192,6 +192,8 @@ def deliver_batch(connect,config,send=None):
 def start_worker(connect,database):
     config=configuration(database)
     stop=threading.Event()
+    if not config:
+        print('Background notifications are disabled: install requirements.txt and run push_setup.py --contact YOUR_HTTPS_ORIGIN using the server Python environment. See README.md.')
     if config:
         def run():
             while not stop.is_set():
